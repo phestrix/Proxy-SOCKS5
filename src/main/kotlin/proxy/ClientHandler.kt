@@ -89,12 +89,12 @@ class ClientHandler(
                     withContext(context) {
                         val clientToTarget =
                             async {
-                                println("clientToTarget");
+                                println("clientToTarget")
                                 input.copyToWithLogging(targetSocket.openWriteChannel(autoFlush = true))
                             }
                         val targetToClient =
                             async {
-                                println("targetToClient");
+                                println("targetToClient")
                                 targetSocket.openReadChannel().copyToWithLogging(output)
                             }
                         clientToTarget.await()
@@ -118,12 +118,12 @@ class ClientHandler(
                     withContext(context) {
                         val clientToIncoming =
                             async {
-                                println("clientToIncoming");
+                                println("clientToIncoming")
                                 input.copyToWithLogging(incomingSocket.openWriteChannel(autoFlush = true))
                             }
                         val incomingToClient =
                             async {
-                                println("incomingToClient");
+                                println("incomingToClient")
                                 incomingSocket.openReadChannel().copyToWithLogging(output)
                             }
                         clientToIncoming.await()
