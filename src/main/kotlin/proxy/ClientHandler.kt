@@ -1,19 +1,21 @@
 package proxy
 
 import dns.Resolver
-import io.ktor.network.selector.SelectorManager
+import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
-import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.core.ByteOrder
-import io.ktor.utils.io.readShort
-import kotlinx.coroutines.*
+import io.ktor.utils.io.*
+import io.ktor.utils.io.core.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
+import kotlin.coroutines.CoroutineContext
 
 class ClientHandler(
     private val resolver: Resolver,
-    private val selectorManager: SelectorManager
+    private val selectorManager: SelectorManager,
+    private val context: CoroutineContext = Dispatchers.IO
 ) {
     suspend fun handle(clientSocket: Socket) {
         val input = clientSocket.openReadChannel()
@@ -27,7 +29,7 @@ class ClientHandler(
 
         if (version != 5 || 0.toByte() !in methods) {
             sendGreeting(output, success = false)
-            clientSocket.close()
+            clientSocket.closeInContext(context)
             println("Unsupported SOCKS version or authentication method")
             return
         }
@@ -43,7 +45,9 @@ class ClientHandler(
             1 -> {
                 val address = ByteArray(4)
                 input.readFully(address, 0, address.size)
-                targetHost = InetAddress.getByAddress(address).hostAddress
+                targetHost = withContext(context) {
+                    InetAddress.getByAddress(address)
+                }.hostAddress
                 println("ipv4 - $targetHost")
             }
 
@@ -56,7 +60,7 @@ class ClientHandler(
                 if (targetHostAddress == null) {
                     println("DNS resolution failed for $targetHost")
                     sendSocksResponse(output, replyCode = 0x04)
-                    clientSocket.close()
+                    clientSocket.closeInContext(context)
                     return
                 }
                 targetHost = targetHostAddress
@@ -66,7 +70,7 @@ class ClientHandler(
             else -> {
                 println("Unsupported address type")
                 sendSocksResponse(output, replyCode = 0x08)
-                clientSocket.close()
+                clientSocket.closeInContext(context)
                 return
             }
         }
@@ -82,13 +86,17 @@ class ClientHandler(
                     sendSocksResponse(output, replyCode = 0x00, localAddress = targetSocket.localAddress)
 
                     println("starting messaging")
-                    withContext(Dispatchers.IO) {
+                    withContext(context) {
                         val clientToTarget =
-                            async { println("clientToTarget");
-                                input.copyToWithLogging(targetSocket.openWriteChannel(autoFlush = true)) }
+                            async {
+                                println("clientToTarget");
+                                input.copyToWithLogging(targetSocket.openWriteChannel(autoFlush = true))
+                            }
                         val targetToClient =
-                            async { println("targetToClient");
-                                targetSocket.openReadChannel().copyToWithLogging(output) }
+                            async {
+                                println("targetToClient");
+                                targetSocket.openReadChannel().copyToWithLogging(output)
+                            }
                         clientToTarget.await()
                         targetToClient.await()
                     }
@@ -107,13 +115,17 @@ class ClientHandler(
                     sendSocksResponse(output, replyCode = 0x00, localAddress = serverSocket.localAddress)
 
                     val incomingSocket = serverSocket.accept()
-                    withContext(Dispatchers.IO) {
+                    withContext(context) {
                         val clientToIncoming =
-                            async { println("clientToIncoming");
-                                input.copyToWithLogging(incomingSocket.openWriteChannel(autoFlush = true)) }
+                            async {
+                                println("clientToIncoming");
+                                input.copyToWithLogging(incomingSocket.openWriteChannel(autoFlush = true))
+                            }
                         val incomingToClient =
-                            async {println("incomingToClient");
-                                incomingSocket.openReadChannel().copyToWithLogging(output) }
+                            async {
+                                println("incomingToClient");
+                                incomingSocket.openReadChannel().copyToWithLogging(output)
+                            }
                         clientToIncoming.await()
                         incomingToClient.await()
                     }
@@ -127,19 +139,23 @@ class ClientHandler(
             else -> {
                 println("unsupported command")
                 sendSocksResponse(output, replyCode = 0x07)
-                clientSocket.close()
+                clientSocket.closeInContext(context)
                 return
             }
         }
-        clientSocket.close()
+        clientSocket.closeInContext(context)
     }
 
-    suspend fun sendGreeting(output: ByteWriteChannel, success: Boolean) {
+    private suspend fun sendGreeting(output: ByteWriteChannel, success: Boolean) {
         output.writeByte(0x05)
         output.writeByte(if (success) 0x00.toByte() else 0xFF.toByte())
     }
 
-    suspend fun sendSocksResponse(output: ByteWriteChannel, replyCode: Int, localAddress: SocketAddress? = null) {
+    private suspend fun sendSocksResponse(
+        output: ByteWriteChannel,
+        replyCode: Int,
+        localAddress: SocketAddress? = null
+    ) {
         output.writeByte(0x05)
         output.writeByte(replyCode.toByte())
         output.writeByte(0x00)
@@ -147,7 +163,9 @@ class ClientHandler(
 
 
         if (localAddress is InetSocketAddress) {
-            val addressBytes = InetAddress.getByName(localAddress.hostname).address
+            val addressBytes = withContext(Dispatchers.IO) {
+                InetAddress.getByName(localAddress.hostname)
+            }.address
             output.writeFully(addressBytes, 0, addressBytes.size)
             output.writeShort(localAddress.port.toShort())
         } else {
@@ -155,16 +173,23 @@ class ClientHandler(
             output.writeShort(0)
         }
     }
-    suspend fun ByteReadChannel.copyToWithLogging(output: ByteWriteChannel) {
-        val buffer = ByteArray(8192*8)
+
+    private suspend fun ByteReadChannel.copyToWithLogging(output: ByteWriteChannel) {
+        val buffer = ByteArray(8192 * 8)
         while (!isClosedForRead) {
-            val bytesRead = readAvailable(buffer,0,buffer.size)
+            val bytesRead = readAvailable(buffer, 0, buffer.size)
             if (bytesRead > 0) {
                 println("Read $bytesRead bytes")
                 output.writeFully(buffer, 0, bytesRead)
                 output.flush()
                 println("Wrote $bytesRead bytes")
             }
+        }
+    }
+
+    private suspend fun Socket.closeInContext(context: CoroutineContext) {
+        withContext(context) {
+            close()
         }
     }
 }

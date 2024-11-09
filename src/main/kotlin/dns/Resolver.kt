@@ -18,7 +18,7 @@ class Resolver(private val dnsServer: String, private val selectorManager: Selec
         return parseDnsResponse(response)
     }
 
-    fun parseDnsResponse(response: ByteArray): String? {
+    private fun parseDnsResponse(response: ByteArray): String? {
         val ipStart = response.indexOf(0xC0.toByte()) + 2
         if (ipStart == 1) return null
         val ipAddress = response.slice(ipStart until ipStart + 4).toByteArray()

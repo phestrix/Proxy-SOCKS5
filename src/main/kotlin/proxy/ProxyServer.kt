@@ -17,7 +17,6 @@ suspend fun startProxy(host: String, port: Int) {
         while (true) {
             val clientSocket = serverSocket.accept()
             println("Accepted connection from ${clientSocket.remoteAddress}")
-
             launch {
                 try {
                     clientHandler.handle(clientSocket)
