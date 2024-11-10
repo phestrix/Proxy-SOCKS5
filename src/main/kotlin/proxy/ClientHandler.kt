@@ -8,6 +8,9 @@ import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import proxy.sokcs.AddressType
+import proxy.sokcs.CommandType
+import proxy.sokcs.VersionType
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import kotlin.coroutines.CoroutineContext
@@ -23,11 +26,11 @@ class ClientHandler(
 
         println("Client connected: ${clientSocket.remoteAddress}")
 
-        val version = input.readByte().toInt()
+        val version = VersionType.byCode(input.readByte())
         val nMethods = input.readByte().toInt()
         val methods = ByteArray(nMethods) { input.readByte() }
 
-        if (version != 5 || 0.toByte() !in methods) {
+        if (version != VersionType.SOCKS5 || 0.toByte() !in methods) {
             sendGreeting(output, success = false)
             clientSocket.closeInContext(context)
             println("Unsupported SOCKS version or authentication method")
@@ -37,12 +40,12 @@ class ClientHandler(
         sendGreeting(output, success = true)
 
         val commandVersion = input.readByte().toInt()
-        val commandCode = input.readByte().toInt()
+        val commandCode = CommandType.byCode(input.readByte())
         input.readByte()
-        val addressType = input.readByte().toInt()
+        val addressType = AddressType.byCode(input.readByte())
         var targetHost: String
         when (addressType) {
-            1 -> {
+            AddressType.IPV4 -> {
                 val address = ByteArray(4)
                 input.readFully(address, 0, address.size)
                 targetHost = withContext(context) {
@@ -51,7 +54,7 @@ class ClientHandler(
                 println("ipv4 - $targetHost")
             }
 
-            3 -> {
+            AddressType.DOMAIN -> {
                 val len = input.readByte()
                 val domainName = ByteArray(len.toInt())
                 input.readFully(domainName, 0, domainName.size)
@@ -67,7 +70,7 @@ class ClientHandler(
                 println("domain - $targetHost")
             }
 
-            else -> {
+            AddressType.IPV6 -> {
                 println("Unsupported address type")
                 sendSocksResponse(output, replyCode = 0x08)
                 clientSocket.closeInContext(context)
@@ -78,7 +81,7 @@ class ClientHandler(
         val targetPort: Int = input.readShort(ByteOrder.BIG_ENDIAN).toInt()
 
         when (commandCode) {
-            0x01 -> {
+            CommandType.CONNECT -> {
                 try {
                     println("CONNECT command: connecting to $targetHost:$targetPort")
                     val targetSocket = aSocket(selectorManager).tcp().connect(targetHost, targetPort)
@@ -107,7 +110,7 @@ class ClientHandler(
                 }
             }
 
-            0x02 -> {
+            CommandType.BIND -> {
                 try {
                     println("BIND command: binding to $targetHost:$targetPort")
                     val serverSocket = aSocket(selectorManager).tcp().bind()
@@ -136,7 +139,7 @@ class ClientHandler(
 
             }
 
-            else -> {
+            CommandType.UDP_ASSOCIATE -> {
                 println("unsupported command")
                 sendSocksResponse(output, replyCode = 0x07)
                 clientSocket.closeInContext(context)
