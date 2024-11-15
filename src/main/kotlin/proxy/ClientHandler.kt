@@ -29,8 +29,8 @@ class ClientHandler(
         val version = VersionType.byCode(input.readByte())
         val nMethods = input.readByte().toInt()
         val methods = ByteArray(nMethods) { input.readByte() }
-
-        if (version != VersionType.SOCKS5 || 0.toByte() !in methods) {
+//0.toByte() to const
+        if (version != VersionType.SOCKS5 || SOCKS5_NOAUTH_METHOD !in methods) {
             sendGreeting(output, success = false)
             clientSocket.closeInContext(context)
             println("Unsupported SOCKS version or authentication method")
@@ -39,7 +39,7 @@ class ClientHandler(
 
         sendGreeting(output, success = true)
 
-        val commandVersion = input.readByte().toInt()
+        /*val commandVersion =*/ input.readByte().toInt()
         val commandCode = CommandType.byCode(input.readByte())
         input.readByte()
         val addressType = AddressType.byCode(input.readByte())
@@ -62,7 +62,7 @@ class ClientHandler(
                 val targetHostAddress = resolver.resolve(targetHost)
                 if (targetHostAddress == null) {
                     println("DNS resolution failed for $targetHost")
-                    sendSocksResponse(output, replyCode = 0x04)
+                    sendSocksResponse(output, replyCode = VersionType.SOCKS5.unreachableHostCode)
                     clientSocket.closeInContext(context)
                     return
                 }
@@ -72,7 +72,7 @@ class ClientHandler(
 
             AddressType.IPV6 -> {
                 println("Unsupported address type")
-                sendSocksResponse(output, replyCode = 0x08)
+                sendSocksResponse(output, replyCode = SOCKS5_ADDR_NOT_SUPPORTED)
                 clientSocket.closeInContext(context)
                 return
             }
@@ -86,7 +86,7 @@ class ClientHandler(
                     println("CONNECT command: connecting to $targetHost:$targetPort")
                     val targetSocket = aSocket(selectorManager).tcp().connect(targetHost, targetPort)
 
-                    sendSocksResponse(output, replyCode = 0x00, localAddress = targetSocket.localAddress)
+                    sendSocksResponse(output, replyCode = VersionType.SOCKS5.successCode, localAddress = targetSocket.localAddress)
 
                     println("starting messaging")
                     withContext(context) {
@@ -106,7 +106,7 @@ class ClientHandler(
                     println("Connection closed with $targetHost:$targetPort")
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    sendSocksResponse(output, replyCode = 0x01)
+                    sendSocksResponse(output, replyCode = SOCKS5_GENERAL_FAILURE)
                 }
             }
 
@@ -115,7 +115,7 @@ class ClientHandler(
                     println("BIND command: binding to $targetHost:$targetPort")
                     val serverSocket = aSocket(selectorManager).tcp().bind()
 
-                    sendSocksResponse(output, replyCode = 0x00, localAddress = serverSocket.localAddress)
+                    sendSocksResponse(output, replyCode = VersionType.SOCKS5.successCode, localAddress = serverSocket.localAddress)
 
                     val incomingSocket = serverSocket.accept()
                     withContext(context) {
@@ -134,14 +134,14 @@ class ClientHandler(
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    sendSocksResponse(output, replyCode = 0x01)
+                    sendSocksResponse(output, replyCode = SOCKS5_GENERAL_FAILURE)
                 }
 
             }
 
             CommandType.UDP_ASSOCIATE -> {
                 println("unsupported command")
-                sendSocksResponse(output, replyCode = 0x07)
+                sendSocksResponse(output, replyCode = SOCKS5_UNSUPPORTED)
                 clientSocket.closeInContext(context)
                 return
             }
@@ -150,19 +150,19 @@ class ClientHandler(
     }
 
     private suspend fun sendGreeting(output: ByteWriteChannel, success: Boolean) {
-        output.writeByte(0x05)
-        output.writeByte(if (success) 0x00.toByte() else 0xFF.toByte())
+        output.writeByte(VersionType.SOCKS5.code)
+        output.writeByte(if (success) VersionType.SOCKS5.successCode else SOCKS5_NO_ACCEPTABLE_METHODS)
     }
 
     private suspend fun sendSocksResponse(
         output: ByteWriteChannel,
-        replyCode: Int,
+        replyCode: Byte,
         localAddress: SocketAddress? = null
     ) {
-        output.writeByte(0x05)
-        output.writeByte(replyCode.toByte())
-        output.writeByte(0x00)
-        output.writeByte(0x01)
+        output.writeByte(VersionType.SOCKS5.code)
+        output.writeByte(replyCode)
+        output.writeByte(SOCKS5_RESERVED)
+        output.writeByte(SOCKS5_IPV4_TYPE)
 
 
         if (localAddress is InetSocketAddress) {
@@ -196,3 +196,11 @@ class ClientHandler(
         }
     }
 }
+
+private const val SOCKS5_RESERVED: Byte = 0x00
+private const val SOCKS5_UNSUPPORTED: Byte = 0x07
+private const val SOCKS5_NO_ACCEPTABLE_METHODS: Byte = 0xFF.toByte()
+private const val SOCKS5_NOAUTH_METHOD: Byte = 0x00
+private const val SOCKS5_ADDR_NOT_SUPPORTED: Byte = 0x08
+private const val SOCKS5_GENERAL_FAILURE: Byte = 0x01
+private const val SOCKS5_IPV4_TYPE: Byte = 0x01
