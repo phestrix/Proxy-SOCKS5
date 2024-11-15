@@ -1,12 +1,12 @@
 plugins {
     kotlin("jvm") version "2.0.20"
+    application
 }
 
 group = "ru.phestrix"
 version = "1.0-SNAPSHOT"
 val ktor_version: String by project
 val kotlin_version: String by project
-
 repositories {
     mavenCentral()
 }
@@ -18,9 +18,20 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
+application{
+    mainClass.set("ru.phestrix.src.main.kotlin.MainKt")
+}
+
 tasks.test {
     useJUnitPlatform()
 }
+
+tasks.jar{
+    manifest{
+        attributes["Main-Class"] = "ru.phestrix.src.main.kotlin.MainKt"
+    }
+}
+
 kotlin {
     jvmToolchain(17)
 }
