@@ -1,4 +1,4 @@
-package proxy.sokcs
+package proxy.exception
 
 import io.ktor.utils.io.errors.IOException
 

@@ -8,9 +8,9 @@ import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import proxy.sokcs.AddressType
-import proxy.sokcs.CommandType
-import proxy.sokcs.VersionType
+import proxy.types.AddressType
+import proxy.types.CommandType
+import proxy.types.VersionType
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import kotlin.coroutines.CoroutineContext
@@ -29,8 +29,8 @@ class ClientHandler(
         val version = VersionType.byCode(input.readByte())
         val nMethods = input.readByte().toInt()
         val methods = ByteArray(nMethods) { input.readByte() }
-//0.toByte() to const
-        if (version != VersionType.SOCKS5 || SOCKS5_NOAUTH_METHOD !in methods) {
+
+        if (version != VersionType.SOCKS5 || SOCKS5_NO_AUTH_METHOD !in methods) {
             sendGreeting(output, success = false)
             clientSocket.closeInContext(context)
             println("Unsupported SOCKS version or authentication method")
@@ -39,7 +39,7 @@ class ClientHandler(
 
         sendGreeting(output, success = true)
 
-        /*val commandVersion =*/ input.readByte().toInt()
+        input.readByte() //read reserved byte
         val commandCode = CommandType.byCode(input.readByte())
         input.readByte()
         val addressType = AddressType.byCode(input.readByte())
@@ -200,7 +200,7 @@ class ClientHandler(
 private const val SOCKS5_RESERVED: Byte = 0x00
 private const val SOCKS5_UNSUPPORTED: Byte = 0x07
 private const val SOCKS5_NO_ACCEPTABLE_METHODS: Byte = 0xFF.toByte()
-private const val SOCKS5_NOAUTH_METHOD: Byte = 0x00
+private const val SOCKS5_NO_AUTH_METHOD: Byte = 0x00
 private const val SOCKS5_ADDR_NOT_SUPPORTED: Byte = 0x08
 private const val SOCKS5_GENERAL_FAILURE: Byte = 0x01
 private const val SOCKS5_IPV4_TYPE: Byte = 0x01

@@ -1,4 +1,6 @@
-package proxy.sokcs
+package proxy.types
+
+import proxy.exception.SOCKSException
 
 enum class AddressType(val code: Byte) {
     IPV4(1),
