@@ -20,6 +20,7 @@ class ClientHandler(
     private val selectorManager: SelectorManager,
     private val context: CoroutineContext = Dispatchers.IO
 ) {
+    private val bufferSize = 8192 * 8
     suspend fun handle(clientSocket: Socket) {
         val input = clientSocket.openReadChannel()
         val output = clientSocket.openWriteChannel(autoFlush = true)
@@ -178,7 +179,7 @@ class ClientHandler(
     }
 
     private suspend fun ByteReadChannel.copyToWithLogging(output: ByteWriteChannel) {
-        val buffer = ByteArray(8192 * 8)
+        val buffer = ByteArray(bufferSize)
         while (!isClosedForRead) {
             val bytesRead = readAvailable(buffer, 0, buffer.size)
             if (bytesRead > 0) {
